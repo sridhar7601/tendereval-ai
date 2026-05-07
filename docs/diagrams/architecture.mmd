@@ -1,0 +1,91 @@
+---
+title: Theme 3 — TenderEval AI Architecture
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#7c3aed'
+    primaryTextColor: '#fff'
+    primaryBorderColor: '#5b21b6'
+    lineColor: '#64748b'
+    fontFamily: 'Inter, system-ui, sans-serif'
+---
+flowchart TB
+    subgraph Inputs["INPUT DOCUMENTS"]
+      TENDER["Tender PDF / DOCX<br/>(CRPF Border Outpost<br/>· dozens of criteria<br/>· hundreds of pages)"]
+      BIDS["Bidder Submissions<br/>(typed PDF · scanned cert<br/>· photo of physical seal<br/>· DOCX · spreadsheet)"]
+    end
+
+    subgraph OCR["TWO-ENGINE OCR (auto-fallback)"]
+      DOCLING["Docling<br/>(typed PDF / DOCX<br/>→ markdown · 0.95 conf)"]
+      PADDLE["PaddleOCR<br/>(scanned / photo<br/>→ angle-corrected text<br/>+ per-line conf)"]
+      FALLBACK["Auto-fallback<br/>(if Docling output &lt; 100 chars)"]
+    end
+
+    subgraph Extract["TENDER CRITERIA EXTRACTION"]
+      LLM_EXT["GPT-4.1<br/>strict JSON-only<br/>+ 2 retries with self-consistency"]
+      CRITERIA["Criteria Schema<br/>(category · threshold<br/>· mandatory · page ref<br/>· evidence-doc list)"]
+    end
+
+    subgraph Eval["PER-CRITERION EVALUATION (parallelisable)"]
+      PAIR["For each (bidder × criterion)<br/>concatenate bidder docs<br/>with OCR confidence labels"]
+      LLM_EVAL["GPT-4.1<br/>strict JSON only<br/>+ self-consistency retries"]
+      VERDICT["Verdict + Extracted Value<br/>+ Reasoning + Confidence<br/>+ Source Document filename"]
+    end
+
+    subgraph Triage["3-STATE VERDICT (never silent disqualify)"]
+      ELIG["Eligible<br/>(all mandatory met<br/>+ scored thresholds)"]
+      NOT["Not Eligible<br/>(mandatory missing<br/>or threshold failed)"]
+      REVIEW["Needs Review<br/>(low OCR conf<br/>or ambiguous extraction)"]
+    end
+
+    subgraph Audit["AUDIT-READY OUTPUT"]
+      MATRIX["Evaluation Matrix<br/>(rows = criteria<br/>columns = bidders)"]
+      EXPORT["Markdown Report<br/>(sign-off table)"]
+    end
+
+    subgraph UI["FRONTEND (React + Vite)"]
+      DASH["/ Dashboard<br/>(AI Procurement Briefing)"]
+      TND["/tender/&lt;id&gt;<br/>(extracted criteria)"]
+      BIDD["/bidders/&lt;id&gt;<br/>(Bulk Evaluate All)"]
+      RES["/results/&lt;id&gt;<br/>(matrix · click cell)"]
+    end
+
+    TENDER --> DOCLING
+    TENDER --> PADDLE
+    BIDS --> DOCLING
+    BIDS --> PADDLE
+    DOCLING --> FALLBACK
+    PADDLE --> FALLBACK
+    FALLBACK --> LLM_EXT
+    FALLBACK --> PAIR
+    LLM_EXT --> CRITERIA
+    CRITERIA --> PAIR
+    PAIR --> LLM_EVAL
+    LLM_EVAL --> VERDICT
+    VERDICT --> ELIG
+    VERDICT --> NOT
+    VERDICT --> REVIEW
+    ELIG --> MATRIX
+    NOT --> MATRIX
+    REVIEW --> MATRIX
+    MATRIX --> EXPORT
+
+    MATRIX --> RES
+    CRITERIA --> TND
+    LLM_EXT --> DASH
+
+    classDef inputs fill:#fef3c7,stroke:#d97706,color:#92400e
+    classDef ocr fill:#fee2e2,stroke:#b91c1c,color:#7f1d1d
+    classDef extract fill:#ede9fe,stroke:#6d28d9,color:#4c1d95
+    classDef eval fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    classDef triage fill:#dcfce7,stroke:#15803d,color:#14532d
+    classDef audit fill:#f3e8ff,stroke:#6b21a8,color:#581c87
+    classDef ui fill:#f1f5f9,stroke:#334155,color:#0f172a
+
+    class TENDER,BIDS inputs
+    class DOCLING,PADDLE,FALLBACK ocr
+    class LLM_EXT,CRITERIA extract
+    class PAIR,LLM_EVAL,VERDICT eval
+    class ELIG,NOT,REVIEW triage
+    class MATRIX,EXPORT audit
+    class DASH,TND,BIDD,RES ui
